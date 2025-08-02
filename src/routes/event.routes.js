@@ -1,7 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const { verifyAuthenticated, verifyOrganizer, verifyAdmin, verifyOrganizerOrAdmin, verifyVolunteer } = require('../middleware/auth.middleware');
+
+// Impor semua middleware yang diperlukan
+const { 
+    verifyAuthenticated, 
+    verifyOrganizer, 
+    verifyAdmin, 
+    verifyEventOwner, 
+    verifyVolunteer 
+} = require('../middleware/auth.middleware');
+
+// Impor fungsi dari controller yang relevan
 const { 
     createEvent, 
     updateEvent, 
@@ -12,26 +22,45 @@ const {
     getMyEvents,
     getAllEventsForAdmin,
     registerForEvent,
-    cancelRegistration
+    cancelRegistration,
+    getEventStats,
+    getLatestEvents,
+    getMyRegisteredEvents
 } = require('../controllers/event.controller');
+const { emailVolunteers } = require('../controllers/communication.controller');
 
+// Konfigurasi Multer untuk menangani upload file
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 5 * 1024 * 1024 },
 });
 
-// --- Rute GET ---
-// Penting: Rute yang lebih spesifik harus diletakkan sebelum rute dengan parameter (:id)
-router.get('/', getPublicEvents);                           // Publik
-router.get('/all', verifyAdmin, getAllEventsForAdmin);       // Admin
-router.get('/my-events', verifyOrganizer, getMyEvents);      // Organizer
-router.get('/:id', getEventById);                            // Publik (detail)
-router.get('/:id/volunteers', verifyAuthenticated, verifyOrganizerOrAdmin, getEventVolunteers); // Organizer/Admin (pemilik event)
+// Konfigurasi untuk menerima gambar utama dan galeri
+const uploadFields = upload.fields([
+    { name: 'image', maxCount: 1 }, 
+    { name: 'gallery', maxCount: 10 } 
+]);
 
-// --- Rute POST, PATCH, DELETE ---
-router.post('/', verifyOrganizer, upload.single('image'), createEvent);
-router.patch('/:id', verifyOrganizer, upload.single('image'), updateEvent);
-router.delete('/:id', verifyAuthenticated, verifyOrganizerOrAdmin, deleteEvent);
+// --- Rute GET ---
+// Rute yang paling spesifik (tanpa parameter) diletakkan di atas
+router.get('/', getPublicEvents);
+router.get('/latest', getLatestEvents);
+router.get('/all', verifyAdmin, getAllEventsForAdmin);
+router.get('/my-events', verifyOrganizer, getMyEvents);
+router.get('/stats', verifyOrganizer, getEventStats);
+router.get('/my-registered-events', verifyVolunteer, getMyRegisteredEvents);
+
+// Rute dengan parameter diletakkan di bawah rute spesifik
+router.get('/:id', getEventById);
+router.get('/:id/volunteers', verifyAuthenticated, verifyEventOwner, getEventVolunteers);
+
+// --- Rute Manajemen & Komunikasi Event ---
+router.post('/', verifyOrganizer, uploadFields, createEvent);
+router.patch('/:id', verifyAuthenticated, verifyEventOwner, uploadFields, updateEvent); 
+router.delete('/:id', verifyAuthenticated, verifyEventOwner, deleteEvent);
+router.post('/:id/email-volunteers', verifyAuthenticated, verifyEventOwner, emailVolunteers); // Endpoint baru untuk email
+
+// --- Rute Partisipasi Volunteer ---
 router.post('/:id/register', verifyVolunteer, registerForEvent);
 router.delete('/:id/register', verifyVolunteer, cancelRegistration);
 
